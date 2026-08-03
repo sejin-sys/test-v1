@@ -138,7 +138,7 @@
       faceImg = getFrame();
       const distance = faceapi.euclideanDistance(idDescriptor, detection.descriptor);
 
-      if (distance < 0.55) {
+      if (distance < 0.85) {
         const userId = 'USER_' + Math.floor(Math.random() * 899999 + 100000);
 
         // 구글 백엔드로 결과 전송
