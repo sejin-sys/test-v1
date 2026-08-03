@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>실시간 본인인증</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- 안정적인 face-api 라이브러리 -->
+  <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.js"></script>
+  <style>
+    .id-guide { width: 250px; height: 155px; border: 3px dashed #3b82f6; border-radius: 12px; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); pointer-events: none; }
+    .face-guide { width: 170px; height: 220px; border: 3px dashed #10b981; border-radius: 50%; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); pointer-events: none; }
+  </style>
+</head>
+<body class="bg-gray-100 text-gray-800 min-h-screen flex items-center justify-center p-4">
+
+  <div class="max-w-md w-full bg-white rounded-2xl shadow-xl p-6 text-center">
+    <h1 class="text-2xl font-bold text-gray-900 mb-2">실시간 본인인증</h1>
+    <p id="sub-title" class="text-sm text-gray-500 mb-4">시작 버튼을 눌러 카메라 권한을 허용해 주세요.</p>
+
+    <!-- 상태 박스 -->
+    <div id="status-box" class="bg-blue-50 text-blue-700 p-3 rounded-lg text-sm mb-4 font-medium flex items-center justify-center gap-2">
+      <span id="status-text">준비 완료</span>
+      <div id="spinner" class="hidden animate-spin h-4 w-4 border-2 border-blue-600 border-t-transparent rounded-full"></div>
+    </div>
+
+    <!-- 카메라 화면 영역 -->
+    <div class="relative w-full h-72 bg-black rounded-xl overflow-hidden mb-4 flex items-center justify-center">
+      <video id="webcam" autoplay playsinline muted class="w-full h-full object-cover hidden"></video>
+      <div id="id-guide" class="id-guide hidden"></div>
+      <div id="face-guide" class="face-guide hidden"></div>
+      
+      <button id="start-btn" onclick="initSystem()" class="px-5 py-3 bg-blue-600 text-white font-bold rounded-xl shadow hover:bg-blue-700 transition">
+        🎥 카메라 켜기 및 인증 시작
+      </button>
+    </div>
+
+    <canvas id="canvas" class="hidden"></canvas>
+
+    <!-- 캡처 및 전송 버튼 -->
+    <button id="action-btn" onclick="captureIDCard()" disabled class="w-full py-3.5 bg-gray-300 text-white font-bold rounded-xl shadow transition">
+      📸 1단계: 신분증 촬영
+    </button>
+  </div>
+
+  <script>
+    // ⭐ 1단계에서 복사한 Google Apps Script URL을 아래에 넣으세요!
+    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbyLv_dIh28_kQNsktz5aUviSqV8dlTSgCM9RlbN0Wxq34fT9i-xLDkAsB3cF6zB35pu/exec"; 
+    const MODEL_URL = 'https://raw.githubusercontent.com/vladmandic/face-api/master/model/';
+
+    let idDescriptor = null;
+    let idCardImg = '';
+    let faceImg = '';
+
+    const webcam = document.getElementById('webcam');
+    const canvas = document.getElementById('canvas');
+    const statusText = document.getElementById('status-text');
+    const spinner = document.getElementById('spinner');
+    const startBtn = document.getElementById('start-btn');
+    const actionBtn = document.getElementById('action-btn');
+
+    async function initSystem() {
+      startBtn.classList.add('hidden');
+      spinner.classList.remove('hidden');
+      statusText.innerText = "카메라 연결 및 AI 모델 다운로드 중...";
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 } });
+        webcam.srcObject = stream;
+        webcam.classList.remove('hidden');
+
+        // AI 모델 로드 (GitHub Raw 경로는 독립 호스팅에서 100% 동작)
+        await faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL);
+        await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
+        await faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL);
+
+        spinner.classList.add('hidden');
+        statusText.innerText = "신분증의 얼굴을 파란 테두리에 맞춰주세요.";
+        document.getElementById('id-guide').classList.remove('hidden');
+        
+        actionBtn.disabled = false;
+        actionBtn.className = "w-full py-3.5 bg-blue-600 text-white font-bold rounded-xl shadow hover:bg-blue-700 transition";
+      } catch (err) {
+        spinner.classList.add('hidden');
+        statusText.innerText = "카메라 권한 거부 또는 연결 실패";
+        startBtn.classList.remove('hidden');
+      }
+    }
+
+    function getFrame() {
+      canvas.width = webcam.videoWidth;
+      canvas.height = webcam.videoHeight;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(webcam, 0, 0);
+      return canvas.toDataURL('image/jpeg', 0.8);
+    }
+
+    async function captureIDCard() {
+      actionBtn.disabled = true;
+      spinner.classList.remove('hidden');
+      statusText.innerText = "신분증에서 얼굴을 인식하는 중...";
+
+      const detection = await faceapi.detectSingleFace(webcam).withFaceLandmarks().withFaceDescriptor();
+      spinner.classList.add('hidden');
+
+      if (detection) {
+        idDescriptor = detection.descriptor;
+        idCardImg = getFrame();
+
+        statusText.innerText = "신분증 인식 성공! 이제 정면 얼굴을 맞춰주세요.";
+        document.getElementById('id-guide').classList.add('hidden');
+        document.getElementById('face-guide').classList.remove('hidden');
+
+        actionBtn.innerText = "👤 2단계: 실물 얼굴 대조 및 저장";
+        actionBtn.className = "w-full py-3.5 bg-green-600 text-white font-bold rounded-xl shadow hover:bg-green-700 transition";
+        actionBtn.onclick = verifyFace;
+        actionBtn.disabled = false;
+      } else {
+        alert("신분증에서 얼굴을 인식하지 못했습니다. 다시 위치를 맞춰주세요.");
+        statusText.innerText = "신분증 인식 실패. 다시 시도해 주세요.";
+        actionBtn.disabled = false;
+      }
+    }
+
+    async function verifyFace() {
+      actionBtn.disabled = true;
+      spinner.classList.remove('hidden');
+      statusText.innerText = "실물 얼굴 대조 및 구글 드라이브 저장 중...";
+
+      const detection = await faceapi.detectSingleFace(webcam).withFaceLandmarks().withFaceDescriptor();
+      if (!detection) {
+        alert("정면 얼굴이 감지되지 않았습니다.");
+        spinner.classList.add('hidden');
+        actionBtn.disabled = false;
+        return;
+      }
+
+      faceImg = getFrame();
+      const distance = faceapi.euclideanDistance(idDescriptor, detection.descriptor);
+
+      if (distance < 0.55) {
+        const userId = 'USER_' + Math.floor(Math.random() * 899999 + 100000);
+
+        // 구글 백엔드로 결과 전송
+        fetch(GAS_API_URL, {
+          method: 'POST',
+          body: JSON.stringify({
+            userId: userId,
+            idCardImg: idCardImg,
+            faceImg: faceImg,
+            distance: distance.toFixed(4)
+          })
+        })
+        .then(res => res.json())
+        .then(data => {
+          spinner.classList.add('hidden');
+          if (data.success) {
+            statusText.innerText = "✅ 인증 성공! 검사 페이지로 자동 이동합니다.";
+            setTimeout(() => {
+              window.location.href = "https://forms.google.com/"; // 외부 검사 페이지 링크
+            }, 1500);
+          } else {
+            alert("저장 실패: " + data.error);
+          }
+        })
+        .catch(err => {
+          spinner.classList.add('hidden');
+          alert("구글 서버 통신 오류가 발생했습니다.");
+        });
+
+      } else {
+        spinner.classList.add('hidden');
+        alert("신분증과 실물 얼굴이 일치하지 않습니다.");
+        statusText.innerText = "본인 인증 실패.";
+        actionBtn.disabled = false;
+      }
+    }
+  </script>
+</body>
+</html>
