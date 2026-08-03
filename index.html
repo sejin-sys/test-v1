@@ -5,9 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>실시간 본인인증</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- 안정적인 face-api 라이브러리 -->
+  <!-- face-api AI 라이브러리 -->
   <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.js"></script>
   <style>
+    /* 카메라 좌우 반전 처리 */
+    video {
+      transform: scaleX(-1);
+      -webkit-transform: scaleX(-1);
+    }
+    
+    /* 가이드라인 영역 */
     .id-guide { width: 250px; height: 155px; border: 3px dashed #3b82f6; border-radius: 12px; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); pointer-events: none; }
     .face-guide { width: 170px; height: 220px; border: 3px dashed #10b981; border-radius: 50%; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); pointer-events: none; }
   </style>
@@ -16,17 +23,17 @@
 
   <div class="max-w-md w-full bg-white rounded-2xl shadow-xl p-6 text-center">
     <h1 class="text-2xl font-bold text-gray-900 mb-1">실시간 본인인증</h1>
-    <!-- 응시자 성명 표시 영역 -->
+    <!-- 응시자 성명 표시 -->
     <p id="user-display" class="text-base font-semibold text-blue-600 mb-2"></p>
     <p id="sub-title" class="text-xs text-gray-500 mb-4">시작 버튼을 눌러 카메라 권한을 허용해 주세요.</p>
 
-    <!-- 상태 박스 -->
+    <!-- 상태 알림 박스 -->
     <div id="status-box" class="bg-blue-50 text-blue-700 p-3 rounded-lg text-sm mb-4 font-medium flex items-center justify-center gap-2">
       <span id="status-text">준비 완료</span>
       <div id="spinner" class="hidden animate-spin h-4 w-4 border-2 border-blue-600 border-t-transparent rounded-full"></div>
     </div>
 
-    <!-- 카메라 화면 영역 -->
+    <!-- 카메라 및 가이드라인 영역 -->
     <div class="relative w-full h-72 bg-black rounded-xl overflow-hidden mb-4 flex items-center justify-center">
       <video id="webcam" autoplay playsinline muted class="w-full h-full object-cover hidden"></video>
       <div id="id-guide" class="id-guide hidden"></div>
@@ -39,18 +46,28 @@
 
     <canvas id="canvas" class="hidden"></canvas>
 
-    <!-- 캡처 및 전송 버튼 -->
+    <!-- 캡처/진행 버튼 -->
     <button id="action-btn" onclick="captureIDCard()" disabled class="w-full py-3.5 bg-gray-300 text-white font-bold rounded-xl shadow transition">
       📸 1단계: 신분증 촬영
     </button>
   </div>
 
   <script>
-    // ⭐ 앱스 스크립트 웹 앱 URL (/exec 로 끝나는 주소)
-    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzvl1ZSE4DH1OF1pJzGUJy__IT_btI5ne0Es0EMjRT3QxxBwikPQUXgySGsFFsvUeIk/exec"; 
+    // ----------------------------------------------------
+    // 1. 설정 항목
+    // ----------------------------------------------------
+    // 앱스 스크립트 웹 앱 URL (/exec로 끝나는 주소)
+    const GAS_API_URL = "https://script.google.com/macros/s/AKfycby9iaqzIcx_AMu7vz8uF0VAnWghElMrkgJbnfNnq5w/exec"; 
+    
+    // 인증 성공 후 이동할 외부 링크 (원하시는 테스트지 링크로 주소를 변경하세요)
+    const TARGET_TEST_URL = "https://forms.google.com/"; 
+    
     const MODEL_URL = 'https://raw.githubusercontent.com/vladmandic/face-api/master/model/';
 
-    let userName = ""; // 응시자 성명 저장 변수
+    // ----------------------------------------------------
+    // 2. 변수 및 요소 선언
+    // ----------------------------------------------------
+    let userName = "";
     let idDescriptor = null;
     let idCardImg = '';
     let faceImg = '';
@@ -62,7 +79,7 @@
     const startBtn = document.getElementById('start-btn');
     const actionBtn = document.getElementById('action-btn');
 
-    // 페이지 진입 시 응시자 이름 받기
+    // 페이지 접속 시 응시자 이름 받아오기
     window.onload = function() {
       while (!userName || userName.trim() === "") {
         userName = prompt("응시자 성명을 입력해 주세요:");
@@ -74,10 +91,11 @@
       document.getElementById('user-display').innerText = `[ 응시자: ${userName} ]`;
     };
 
+    // 카메라 및 AI 모델 초기화
     async function initSystem() {
       startBtn.classList.add('hidden');
       spinner.classList.remove('hidden');
-      statusText.innerText = "카메라 연결 및 AI 모델 다운로드 중...";
+      statusText.innerText = "카메라 연결 및 시스템 준비 중...";
 
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 } });
@@ -102,6 +120,7 @@
       }
     }
 
+    // 캡처 함수
     function getFrame() {
       canvas.width = webcam.videoWidth;
       canvas.height = webcam.videoHeight;
@@ -110,6 +129,7 @@
       return canvas.toDataURL('image/jpeg', 0.8);
     }
 
+    // 1단계: 신분증 촬영
     async function captureIDCard() {
       actionBtn.disabled = true;
       spinner.classList.remove('hidden');
@@ -137,10 +157,10 @@
       }
     }
 
+    // 2단계: 실물 얼굴 대조 및 전송
     async function verifyFace() {
       actionBtn.disabled = true;
       spinner.classList.remove('hidden');
-      // ✏️ 문구 수정: 구글 드라이브 언급 제거
       statusText.innerText = "실물 얼굴 대조 및 데이터 저장 중...";
 
       const detection = await faceapi.detectSingleFace(webcam).withFaceLandmarks().withFaceDescriptor();
@@ -154,6 +174,7 @@
       faceImg = getFrame();
       const distance = faceapi.euclideanDistance(idDescriptor, detection.descriptor);
 
+      // 너그러운 대조 판정 기준 (0.65)
       if (distance < 0.65) {
         fetch(GAS_API_URL, {
           method: 'POST',
@@ -170,17 +191,17 @@
           if (data.success) {
             statusText.innerText = `✅ ${userName}님 인증 성공! 검사 페이지로 이동합니다.`;
             setTimeout(() => {
-              window.location.href = "https://your-test-site.com/exam-page"; // 이동할 검사 페이지 링크
+              window.location.href = TARGET_TEST_URL; // 설정한 외부 링크로 이동
             }, 1500);
           } else {
-            // ✏️ 문구 수정
             alert("오류가 발생하였습니다. 다시 시도해 주세요.");
+            actionBtn.disabled = false;
           }
         })
         .catch(err => {
           spinner.classList.add('hidden');
-          // ✏️ 문구 수정: 구글 서버 언급 제거
           alert("오류가 발생하였습니다. 다시 시도해 주세요.");
+          actionBtn.disabled = false;
         });
 
       } else {
