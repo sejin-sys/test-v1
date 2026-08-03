@@ -8,15 +8,15 @@
   <!-- face-api AI 라이브러리 -->
   <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.js"></script>
   <style>
-    /* 카메라 좌우 반전 처리 */
-    video {
-      transform: scaleX(-1);
-      -webkit-transform: scaleX(-1);
-    }
-    
     /* 가이드라인 영역 */
     .id-guide { width: 250px; height: 155px; border: 3px dashed #3b82f6; border-radius: 12px; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); pointer-events: none; }
     .face-guide { width: 170px; height: 220px; border: 3px dashed #10b981; border-radius: 50%; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); pointer-events: none; }
+    
+    /* 좌우 반전 클래스 (전면 카메라일 때만 사용) */
+    .mirror {
+      transform: scaleX(-1);
+      -webkit-transform: scaleX(-1);
+    }
   </style>
 </head>
 <body class="bg-gray-100 text-gray-800 min-h-screen flex items-center justify-center p-4">
@@ -39,6 +39,11 @@
       <div id="id-guide" class="id-guide hidden"></div>
       <div id="face-guide" class="face-guide hidden"></div>
       
+      <!-- 카메라 전환 버튼 (카메라 실행 시 노출) -->
+      <button id="switch-btn" onclick="switchCamera()" class="hidden absolute top-3 right-3 bg-black/60 text-white text-xs px-3 py-1.5 rounded-full z-10 flex items-center gap-1 hover:bg-black/80">
+        🔄 카메라 전환
+      </button>
+
       <button id="start-btn" onclick="initSystem()" class="px-5 py-3 bg-blue-600 text-white font-bold rounded-xl shadow hover:bg-blue-700 transition">
         🎥 카메라 켜기 및 인증 시작
       </button>
@@ -56,12 +61,8 @@
     // ----------------------------------------------------
     // 1. 설정 항목
     // ----------------------------------------------------
-    // 앱스 스크립트 웹 앱 URL (/exec로 끝나는 주소)
-    const GAS_API_URL = "https://script.google.com/macros/s/AKfycby9iaqzIcx_AMu7vz8uF0VAnWghElMrkgJbnfNnq5w/exec"; 
-    
-    // 인증 성공 후 이동할 외부 링크 (원하시는 테스트지 링크로 주소를 변경하세요)
+    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxhnwkfQ0AQkZpJrgxncOOQBfWBJv_2-KtBoBd7tVc_NfCez1jerTySbd5V7h7hJx4y/exec"; 
     const TARGET_TEST_URL = "https://forms.google.com/"; 
-    
     const MODEL_URL = 'https://raw.githubusercontent.com/vladmandic/face-api/master/model/';
 
     // ----------------------------------------------------
@@ -71,6 +72,8 @@
     let idDescriptor = null;
     let idCardImg = '';
     let faceImg = '';
+    let currentStream = null;
+    let currentFacingMode = "environment"; // 모바일 시 기본 후면("environment") 사용
 
     const webcam = document.getElementById('webcam');
     const canvas = document.getElementById('canvas');
@@ -78,6 +81,7 @@
     const spinner = document.getElementById('spinner');
     const startBtn = document.getElementById('start-btn');
     const actionBtn = document.getElementById('action-btn');
+    const switchBtn = document.getElementById('switch-btn');
 
     // 페이지 접속 시 응시자 이름 받아오기
     window.onload = function() {
@@ -91,16 +95,41 @@
       document.getElementById('user-display').innerText = `[ 응시자: ${userName} ]`;
     };
 
-    // 카메라 및 AI 모델 초기화
+    // 카메라 시작 (후면 우선 시도 ➔ 안되면 컴퓨터 기본 카메라 사용)
+    async function startWebcam(facingMode) {
+      if (currentStream) {
+        currentStream.getTracks().forEach(track => track.stop());
+      }
+
+      try {
+        // 1. 요청한 방향(후면/전면) 카메라 시도
+        currentStream = await navigator.mediaDevices.getUserMedia({ 
+          video: { facingMode: facingMode, width: 1280, height: 720 } 
+        });
+      } catch (err) {
+        // 2. PC처럼 특정 방향 카메라가 없는 경우 기기 기본 웹캠 연결
+        currentStream = await navigator.mediaDevices.getUserMedia({ video: true });
+      }
+
+      webcam.srcObject = currentStream;
+      webcam.classList.remove('hidden');
+
+      // 전면 카메라일 때만 보기 편하게 좌우 반전(mirror) 처리
+      if (facingMode === "user") {
+        webcam.classList.add('mirror');
+      } else {
+        webcam.classList.remove('mirror');
+      }
+    }
+
+    // 카메라 초기화 및 AI 모델 로드
     async function initSystem() {
       startBtn.classList.add('hidden');
       spinner.classList.remove('hidden');
       statusText.innerText = "카메라 연결 및 시스템 준비 중...";
 
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 } });
-        webcam.srcObject = stream;
-        webcam.classList.remove('hidden');
+        await startWebcam(currentFacingMode);
 
         await faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL);
         await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
@@ -109,6 +138,7 @@
         spinner.classList.add('hidden');
         statusText.innerText = "신분증 뒷자리를 가린 후 파란 테두리에 맞춰주세요.";
         document.getElementById('id-guide').classList.remove('hidden');
+        switchBtn.classList.remove('hidden'); // 수동 전환 버튼 표시
         
         actionBtn.innerText = "📸 1단계: 신분증 촬영 (뒷자리 마스킹 필수)";
         actionBtn.disabled = false;
@@ -120,11 +150,19 @@
       }
     }
 
+    // 카메라 수동 전환 함수
+    async function switchCamera() {
+      currentFacingMode = (currentFacingMode === "environment") ? "user" : "environment";
+      await startWebcam(currentFacingMode);
+    }
+
     // 캡처 함수
     function getFrame() {
       canvas.width = webcam.videoWidth;
       canvas.height = webcam.videoHeight;
       const ctx = canvas.getContext('2d');
+
+      // 저장할 때는 원본 이미지 그대로 저장
       ctx.drawImage(webcam, 0, 0);
       return canvas.toDataURL('image/jpeg', 0.8);
     }
@@ -145,6 +183,12 @@
         statusText.innerText = "신분증 인식 성공! 이제 정면 얼굴을 맞춰주세요.";
         document.getElementById('id-guide').classList.add('hidden');
         document.getElementById('face-guide').classList.remove('hidden');
+
+        // 실물 얼굴 찍을 때는 자동으로 전면 카메라로 전환 시도
+        if (currentFacingMode !== "user") {
+          currentFacingMode = "user";
+          await startWebcam(currentFacingMode);
+        }
 
         actionBtn.innerText = "👤 2단계: 실물 얼굴 대조 및 저장";
         actionBtn.className = "w-full py-3.5 bg-green-600 text-white font-bold rounded-xl shadow hover:bg-green-700 transition";
@@ -191,7 +235,7 @@
           if (data.success) {
             statusText.innerText = `✅ ${userName}님 인증 성공! 검사 페이지로 이동합니다.`;
             setTimeout(() => {
-              window.location.href = TARGET_TEST_URL; // 설정한 외부 링크로 이동
+              window.location.href = TARGET_TEST_URL;
             }, 1500);
           } else {
             alert("오류가 발생하였습니다. 다시 시도해 주세요.");
