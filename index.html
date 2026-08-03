@@ -61,8 +61,11 @@
     // ----------------------------------------------------
     // 1. 설정 항목
     // ----------------------------------------------------
-    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxhnwkfQ0AQkZpJrgxncOOQBfWBJv_2-KtBoBd7tVc_NfCez1jerTySbd5V7h7hJx4y/exec"; 
-    const TARGET_TEST_URL = "https://forms.google.com/"; 
+    const GAS_API_URL = "https://script.google.com/macros/s/AKfycby9iaqzIcx_AMu7vz8uF0VAnWghElMrkgJbnfNnq5w/exec"; 
+    
+    // 🔗 인증 완료 후 이동할 링크 (testlink 적용)
+    const TARGET_TEST_URL = "https://testlink.org/"; // 실제 원하시는 testlink의 상세 URL(http/https 포함)로 수정 가능합니다.
+    
     const MODEL_URL = 'https://raw.githubusercontent.com/vladmandic/face-api/master/model/';
 
     // ----------------------------------------------------
@@ -73,7 +76,7 @@
     let idCardImg = '';
     let faceImg = '';
     let currentStream = null;
-    let currentFacingMode = "environment"; // 모바일 시 기본 후면("environment") 사용
+    let currentFacingMode = "environment"; // 모바일 시 기본 후면 사용
 
     const webcam = document.getElementById('webcam');
     const canvas = document.getElementById('canvas');
@@ -95,26 +98,23 @@
       document.getElementById('user-display').innerText = `[ 응시자: ${userName} ]`;
     };
 
-    // 카메라 시작 (후면 우선 시도 ➔ 안되면 컴퓨터 기본 카메라 사용)
+    // 카메라 시작 (후면 우선 시도 ➔ 안되면 기본 카메라 사용)
     async function startWebcam(facingMode) {
       if (currentStream) {
         currentStream.getTracks().forEach(track => track.stop());
       }
 
       try {
-        // 1. 요청한 방향(후면/전면) 카메라 시도
         currentStream = await navigator.mediaDevices.getUserMedia({ 
           video: { facingMode: facingMode, width: 1280, height: 720 } 
         });
       } catch (err) {
-        // 2. PC처럼 특정 방향 카메라가 없는 경우 기기 기본 웹캠 연결
         currentStream = await navigator.mediaDevices.getUserMedia({ video: true });
       }
 
       webcam.srcObject = currentStream;
       webcam.classList.remove('hidden');
 
-      // 전면 카메라일 때만 보기 편하게 좌우 반전(mirror) 처리
       if (facingMode === "user") {
         webcam.classList.add('mirror');
       } else {
@@ -138,7 +138,7 @@
         spinner.classList.add('hidden');
         statusText.innerText = "신분증 뒷자리를 가린 후 파란 테두리에 맞춰주세요.";
         document.getElementById('id-guide').classList.remove('hidden');
-        switchBtn.classList.remove('hidden'); // 수동 전환 버튼 표시
+        switchBtn.classList.remove('hidden');
         
         actionBtn.innerText = "📸 1단계: 신분증 촬영 (뒷자리 마스킹 필수)";
         actionBtn.disabled = false;
@@ -150,7 +150,7 @@
       }
     }
 
-    // 카메라 수동 전환 함수
+    // 카메라 수동 전환
     async function switchCamera() {
       currentFacingMode = (currentFacingMode === "environment") ? "user" : "environment";
       await startWebcam(currentFacingMode);
@@ -161,8 +161,6 @@
       canvas.width = webcam.videoWidth;
       canvas.height = webcam.videoHeight;
       const ctx = canvas.getContext('2d');
-
-      // 저장할 때는 원본 이미지 그대로 저장
       ctx.drawImage(webcam, 0, 0);
       return canvas.toDataURL('image/jpeg', 0.8);
     }
@@ -184,7 +182,6 @@
         document.getElementById('id-guide').classList.add('hidden');
         document.getElementById('face-guide').classList.remove('hidden');
 
-        // 실물 얼굴 찍을 때는 자동으로 전면 카메라로 전환 시도
         if (currentFacingMode !== "user") {
           currentFacingMode = "user";
           await startWebcam(currentFacingMode);
@@ -218,7 +215,6 @@
       faceImg = getFrame();
       const distance = faceapi.euclideanDistance(idDescriptor, detection.descriptor);
 
-      // 너그러운 대조 판정 기준 (0.65)
       if (distance < 0.65) {
         fetch(GAS_API_URL, {
           method: 'POST',
