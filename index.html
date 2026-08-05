@@ -9,8 +9,8 @@
   <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.js"></script>
   <style>
     /* 가이드라인 영역 */
-    .id-guide { width: 250px; height: 155px; border: 3px dashed #3b82f6; border-radius: 12px; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); pointer-events: none; }
-    .face-guide { width: 170px; height: 220px; border: 3px dashed #10b981; border-radius: 50%; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); pointer-events: none; }
+    .id-guide { width: 250px; height: 155px; border: 3px dashed #3b82f6; border-radius: 12px; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); pointer-events: none; z-index: 20; }
+    .face-guide { width: 170px; height: 220px; border: 3px dashed #10b981; border-radius: 50%; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); pointer-events: none; z-index: 20; }
     
     /* 좌우 반전 클래스 (전면 카메라일 때만 사용) */
     .mirror {
@@ -18,10 +18,10 @@
       -webkit-transform: scaleX(-1);
     }
 
-    /* 📸 카메라 찰칵 효과 (Flash Motion) 추가 */
+    /* 📸 카메라 찰칵 효과 (Flash Motion) - z-index 상향 및 모션 보장 */
     @keyframes flashEffect {
       0% { opacity: 0; }
-      15% { opacity: 0.85; }
+      20% { opacity: 0.9; }
       100% { opacity: 0; }
     }
     .camera-flash {
@@ -33,7 +33,7 @@
       z-index: 50;
     }
     .do-flash {
-      animation: flashEffect 0.35s ease-out;
+      animation: flashEffect 0.35s ease-out forwards;
     }
   </style>
 </head>
@@ -53,20 +53,20 @@
 
     <!-- 카메라 및 가이드라인 영역 -->
     <div class="relative w-full h-72 bg-black rounded-xl overflow-hidden mb-4 flex items-center justify-center">
-      <video id="webcam" autoplay playsinline muted class="w-full h-full object-cover hidden"></video>
+      <video id="webcam" autoplay playsinline muted class="w-full h-full object-cover hidden z-0"></video>
 
-      <!-- 📸 찰칵 효과 오버레이 레이어 추가 -->
+      <!-- 📸 찰칵 효과 오버레이 레이어 -->
       <div id="flash-overlay" class="camera-flash"></div>
 
       <div id="id-guide" class="id-guide hidden"></div>
       <div id="face-guide" class="face-guide hidden"></div>
       
-      <!-- 카메라 전환 버튼 (카메라 실행 시 노출) -->
-      <button id="switch-btn" onclick="switchCamera()" class="hidden absolute top-3 right-3 bg-black/60 text-white text-xs px-3 py-1.5 rounded-full z-10 flex items-center gap-1 hover:bg-black/80">
+      <!-- 카메라 전환 버튼 -->
+      <button id="switch-btn" onclick="switchCamera()" class="hidden absolute top-3 right-3 bg-black/60 text-white text-xs px-3 py-1.5 rounded-full z-30 flex items-center gap-1 hover:bg-black/80">
         🔄 카메라 전환
       </button>
 
-      <button id="start-btn" onclick="initSystem()" class="px-5 py-3 bg-blue-600 text-white font-bold rounded-xl shadow hover:bg-blue-700 transition">
+      <button id="start-btn" onclick="initSystem()" class="px-5 py-3 bg-blue-600 text-white font-bold rounded-xl shadow hover:bg-blue-700 transition z-30">
         🎥 카메라 켜기 및 인증 시작
       </button>
     </div>
@@ -84,10 +84,7 @@
     // 1. 설정 항목
     // ----------------------------------------------------
     const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzOZwLZOcEMb2r2Jcjt6Q-NFYnn216taW3KwE2nw4zjdFfk1DqVi4exMLFTGNAHburQ/exec"; 
-    
-    // 🔗 인증 완료 후 이동할 링크 (testlink 적용)
-    const TARGET_TEST_URL = "https://testlink.org/"; // 실제 원하시는 testlink의 상세 URL(http/https 포함)로 수정 가능합니다.
-    
+    const TARGET_TEST_URL = "https://testlink.org/"; 
     const MODEL_URL = 'https://raw.githubusercontent.com/vladmandic/face-api/master/model/';
 
     // ----------------------------------------------------
@@ -98,7 +95,7 @@
     let idCardImg = '';
     let faceImg = '';
     let currentStream = null;
-    let currentFacingMode = "environment"; // 모바일 시 기본 후면 사용
+    let currentFacingMode = "environment"; // 모바일 기본 후면
 
     const webcam = document.getElementById('webcam');
     const canvas = document.getElementById('canvas');
@@ -109,7 +106,6 @@
     const switchBtn = document.getElementById('switch-btn');
     const flashOverlay = document.getElementById('flash-overlay');
 
-    // 페이지 접속 시 응시자 이름 받아오기
     window.onload = function() {
       while (!userName || userName.trim() === "") {
         userName = prompt("응시자 성명을 입력해 주세요:");
@@ -121,15 +117,17 @@
       document.getElementById('user-display').innerText = `[ 응시자: ${userName} ]`;
     };
 
-    // 📸 찰칵 애니메이션 실행 함수
+    // 📸 찰칵 애니메이션 실행 함수 (브라우저 프레임 동기화 적용)
     function playFlash() {
+      flashOverlay.classList.remove('do-flash');
+      // 브라우저 렌더링 리플로우 강제 trigger 후 클래스 추가
+      void flashOverlay.offsetWidth;
       flashOverlay.classList.add('do-flash');
       setTimeout(() => {
         flashOverlay.classList.remove('do-flash');
       }, 350);
     }
 
-    // 카메라 시작 (후면 우선 시도 ➔ 안되면 기본 카메라 사용)
     async function startWebcam(facingMode) {
       if (currentStream) {
         currentStream.getTracks().forEach(track => track.stop());
@@ -153,7 +151,6 @@
       }
     }
 
-    // 카메라 초기화 및 AI 모델 로드
     async function initSystem() {
       startBtn.classList.add('hidden');
       spinner.classList.remove('hidden');
@@ -181,121 +178,127 @@
       }
     }
 
-    // 카메라 수동 전환
     async function switchCamera() {
       currentFacingMode = (currentFacingMode === "environment") ? "user" : "environment";
       await startWebcam(currentFacingMode);
     }
 
-    // 캡처 함수
     function getFrame() {
       canvas.width = webcam.videoWidth;
       canvas.height = webcam.videoHeight;
       const ctx = canvas.getContext('2d');
       ctx.drawImage(webcam, 0, 0);
-      return canvas.toDataURL('image/jpeg', 0.8);
+      return canvas.toDataURL('image/jpeg', 0.5); // 모바일 구글 전송 최적화를 위해 0.5로 설정
     }
 
-    // 1단계: 신분증 촬영
+    // 1단계: 신분증 촬영 (찰칵 모션이 무거운 AI 연산에 씹히지 않도록 비동기 지연 적용)
     async function captureIDCard() {
       actionBtn.disabled = true;
       
-      // 📸 찰칵 플래시 실행
+      // 1. 찰칵 플래시 실행
       playFlash();
 
-      spinner.classList.remove('hidden');
-      statusText.innerText = "신분증에서 얼굴을 인식하는 중...";
+      // 2. 플래시 모션이 화면에 그려진 후 AI 인식을 수행하도록 50ms 딜레이 부여
+      setTimeout(async () => {
+        spinner.classList.remove('hidden');
+        statusText.innerText = "신분증에서 얼굴을 인식하는 중...";
 
-      const detection = await faceapi.detectSingleFace(webcam).withFaceLandmarks().withFaceDescriptor();
-      spinner.classList.add('hidden');
+        const detection = await faceapi.detectSingleFace(webcam).withFaceLandmarks().withFaceDescriptor();
+        spinner.classList.add('hidden');
 
-      if (detection) {
-        idDescriptor = detection.descriptor;
-        idCardImg = getFrame();
+        if (detection) {
+          idDescriptor = detection.descriptor;
+          idCardImg = getFrame();
 
-        statusText.innerText = "신분증 인식 성공! 이제 정면 얼굴을 맞춰주세요.";
-        document.getElementById('id-guide').classList.add('hidden');
-        document.getElementById('face-guide').classList.remove('hidden');
+          statusText.innerText = "신분증 인식 성공! 이제 정면 얼굴을 맞춰주세요.";
+          document.getElementById('id-guide').classList.add('hidden');
+          document.getElementById('face-guide').classList.remove('hidden');
 
-        if (currentFacingMode !== "user") {
-          currentFacingMode = "user";
-          await startWebcam(currentFacingMode);
+          if (currentFacingMode !== "user") {
+            currentFacingMode = "user";
+            await startWebcam(currentFacingMode);
+          }
+
+          actionBtn.innerText = "👤 2단계: 실물 얼굴 대조 및 저장";
+          actionBtn.className = "w-full py-3.5 bg-green-600 text-white font-bold rounded-xl shadow hover:bg-green-700 transition";
+          actionBtn.onclick = verifyFace;
+          actionBtn.disabled = false;
+        } else {
+          alert("신분증에서 얼굴을 인식하지 못했습니다. 다시 위치를 맞춰주세요.");
+          statusText.innerText = "신분증 인식 실패. 다시 시도해 주세요.";
+          actionBtn.disabled = false;
         }
-
-        actionBtn.innerText = "👤 2단계: 실물 얼굴 대조 및 저장";
-        actionBtn.className = "w-full py-3.5 bg-green-600 text-white font-bold rounded-xl shadow hover:bg-green-700 transition";
-        actionBtn.onclick = verifyFace;
-        actionBtn.disabled = false;
-      } else {
-        alert("신분증에서 얼굴을 인식하지 못했습니다. 다시 위치를 맞춰주세요.");
-        statusText.innerText = "신분증 인식 실패. 다시 시도해 주세요.";
-        actionBtn.disabled = false;
-      }
+      }, 50);
     }
 
     // 2단계: 실물 얼굴 대조 및 전송
     async function verifyFace() {
       actionBtn.disabled = true;
 
-      // 📸 찰칵 플래시 실행
+      // 1. 찰칵 플래시 실행
       playFlash();
 
-      spinner.classList.remove('hidden');
-      statusText.innerText = "실물 얼굴 대조 및 데이터 저장 중...";
+      setTimeout(async () => {
+        spinner.classList.remove('hidden');
+        statusText.innerText = "실물 얼굴 대조 및 데이터 저장 중...";
 
-      const detection = await faceapi.detectSingleFace(webcam).withFaceLandmarks().withFaceDescriptor();
-      if (!detection) {
-        alert("정면 얼굴이 감지되지 않았습니다.");
-        spinner.classList.add('hidden');
-        actionBtn.disabled = false;
-        return;
-      }
-
-      faceImg = getFrame();
-      const distance = faceapi.euclideanDistance(idDescriptor, detection.descriptor);
-
-      // 기준치: 0.80
-      const THRESHOLD = 0.80;
-
-      if (distance < THRESHOLD) {
-        fetch(GAS_API_URL, {
-          method: 'POST',
-          body: JSON.stringify({
-            userId: userName,
-            idCardImg: idCardImg,
-            faceImg: faceImg,
-            distance: distance.toFixed(4)
-          })
-        })
-        .then(res => res.json())
-        .then(data => {
+        const detection = await faceapi.detectSingleFace(webcam).withFaceLandmarks().withFaceDescriptor();
+        if (!detection) {
+          alert("정면 얼굴이 감지되지 않았습니다.");
           spinner.classList.add('hidden');
-          if (data.success) {
-            statusText.innerText = `✅ ${userName}님 인증 성공! 검사 페이지로 이동합니다.`;
-            setTimeout(() => {
-              window.location.href = TARGET_TEST_URL;
-            }, 1500);
-          } else {
+          actionBtn.disabled = false;
+          return;
+        }
+
+        faceImg = getFrame();
+        const distance = faceapi.euclideanDistance(idDescriptor, detection.descriptor);
+
+        const THRESHOLD = 0.85;
+
+        if (distance < THRESHOLD) {
+          fetch(GAS_API_URL, {
+            method: 'POST',
+            mode: 'cors',
+            headers: {
+              'Content-Type': 'text/plain;charset=utf-8'
+            },
+            redirect: 'follow',
+            body: JSON.stringify({
+              userId: userName,
+              idCardImg: idCardImg,
+              faceImg: faceImg,
+              distance: distance.toFixed(4)
+            })
+          })
+          .then(res => res.json())
+          .then(data => {
+            spinner.classList.add('hidden');
+            if (data.success) {
+              statusText.innerText = `✅ ${userName}님 인증 성공! 검사 페이지로 이동합니다.`;
+              setTimeout(() => {
+                window.location.href = TARGET_TEST_URL;
+              }, 1500);
+            } else {
+              alert("오류가 발생하였습니다. 다시 시도해 주세요.");
+              actionBtn.disabled = false;
+            }
+          })
+          .catch(err => {
+            spinner.classList.add('hidden');
             alert("오류가 발생하였습니다. 다시 시도해 주세요.");
             actionBtn.disabled = false;
-          }
-        })
-        .catch(err => {
-          spinner.classList.add('hidden');
-          alert("오류가 발생하였습니다. 다시 시도해 주세요.");
-          actionBtn.disabled = false;
-        });
+          });
 
-      } else {
-        spinner.classList.add('hidden');
-        // 기준치에서 얼마나 떨어져 있는지 계산
-        const diff = (distance - THRESHOLD).toFixed(4);
-        const currentVal = distance.toFixed(4);
-        
-        alert(`신분증과 실물 얼굴이 일치하지 않습니다.\n\n[측정 결과]\n- 현재 측정값: ${currentVal}\n- 일치 기준치: ${THRESHOLD} 이하\n- 기준 초과값: +${diff}`);
-        statusText.innerText = `본인 인증 실패 (측정값: ${currentVal} / 기준: ${THRESHOLD})`;
-        actionBtn.disabled = false;
-      }
+        } else {
+          spinner.classList.add('hidden');
+          const diff = (distance - THRESHOLD).toFixed(4);
+          const currentVal = distance.toFixed(4);
+          
+          alert(`신분증과 실물 얼굴이 일치하지 않습니다.\n\n[측정 결과]\n- 현재 측정값: ${currentVal}\n- 일치 기준치: ${THRESHOLD} 이하\n- 기준 초과값: +${diff}`);
+          statusText.innerText = `본인 인증 실패 (측정값: ${currentVal} / 기준: ${THRESHOLD})`;
+          actionBtn.disabled = false;
+        }
+      }, 50);
     }
   </script>
 </body>
