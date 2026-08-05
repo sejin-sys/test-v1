@@ -18,10 +18,10 @@
       -webkit-transform: scaleX(-1);
     }
 
-    /* 📸 카메라 찰칵 효과 (Flash Motion) */
+    /* 📸 카메라 찰칵 효과 (Flash Motion) 추가 */
     @keyframes flashEffect {
       0% { opacity: 0; }
-      10% { opacity: 0.8; }
+      15% { opacity: 0.85; }
       100% { opacity: 0; }
     }
     .camera-flash {
@@ -33,7 +33,7 @@
       z-index: 50;
     }
     .do-flash {
-      animation: flashEffect 0.4s ease-out;
+      animation: flashEffect 0.35s ease-out;
     }
   </style>
 </head>
@@ -46,16 +46,16 @@
     <p id="sub-title" class="text-xs text-gray-500 mb-4">시작 버튼을 눌러 카메라 권한을 허용해 주세요.</p>
 
     <!-- 상태 알림 박스 -->
-    <div id="status-box" class="bg-blue-50 text-blue-700 p-3 rounded-lg text-sm mb-4 font-medium flex items-center justify-center gap-2 relative overflow-hidden">
+    <div id="status-box" class="bg-blue-50 text-blue-700 p-3 rounded-lg text-sm mb-4 font-medium flex items-center justify-center gap-2">
       <span id="status-text">준비 완료</span>
       <div id="spinner" class="hidden animate-spin h-4 w-4 border-2 border-blue-600 border-t-transparent rounded-full"></div>
     </div>
 
     <!-- 카메라 및 가이드라인 영역 -->
-    <div id="camera-container" class="relative w-full h-72 bg-black rounded-xl overflow-hidden mb-4 flex items-center justify-center">
+    <div class="relative w-full h-72 bg-black rounded-xl overflow-hidden mb-4 flex items-center justify-center">
       <video id="webcam" autoplay playsinline muted class="w-full h-full object-cover hidden"></video>
-      
-      <!-- 📸 찰칵 효과용 오버레이 -->
+
+      <!-- 📸 찰칵 효과 오버레이 레이어 추가 -->
       <div id="flash-overlay" class="camera-flash"></div>
 
       <div id="id-guide" class="id-guide hidden"></div>
@@ -83,15 +83,12 @@
     // ----------------------------------------------------
     // 1. 설정 항목
     // ----------------------------------------------------
-    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbw-QJUJkGzFPF0SkrFFvstZvCmogHax3PUDBxNdXRYJn-KcZXn1EGCzt_E2Vs7HyO5f/exec"; 
+    const GAS_API_URL = "https://script.google.com/macros/s/AKfycby9iaqzIcx_AMu7vz8uF0VAnWghElMrkgJbnfNnq5w/exec"; 
     
-    // 🔗 인증 완료 후 이동할 링크
-    const TARGET_TEST_URL = "https://testlink.org/"; 
+    // 🔗 인증 완료 후 이동할 링크 (testlink 적용)
+    const TARGET_TEST_URL = "https://testlink.org/"; // 실제 원하시는 testlink의 상세 URL(http/https 포함)로 수정 가능합니다.
     
     const MODEL_URL = 'https://raw.githubusercontent.com/vladmandic/face-api/master/model/';
-
-    // 통과 기준치 (0.8로 설정)
-    const THRESHOLD = 0.8; 
 
     // ----------------------------------------------------
     // 2. 변수 및 요소 선언
@@ -101,7 +98,7 @@
     let idCardImg = '';
     let faceImg = '';
     let currentStream = null;
-    let currentFacingMode = "environment";
+    let currentFacingMode = "environment"; // 모바일 시 기본 후면 사용
 
     const webcam = document.getElementById('webcam');
     const canvas = document.getElementById('canvas');
@@ -124,15 +121,15 @@
       document.getElementById('user-display').innerText = `[ 응시자: ${userName} ]`;
     };
 
-    // 📸 시각적 찰칵 모션 실행 함수
+    // 📸 찰칵 애니메이션 실행 함수
     function playFlash() {
       flashOverlay.classList.add('do-flash');
       setTimeout(() => {
         flashOverlay.classList.remove('do-flash');
-      }, 400);
+      }, 350);
     }
 
-    // 카메라 시작
+    // 카메라 시작 (후면 우선 시도 ➔ 안되면 기본 카메라 사용)
     async function startWebcam(facingMode) {
       if (currentStream) {
         currentStream.getTracks().forEach(track => track.stop());
@@ -190,25 +187,24 @@
       await startWebcam(currentFacingMode);
     }
 
-    // 캡처 함수 (네트워크 에러 방지를 위해 압축률 0.5로 변경하여 데이터 용량 절감)
+    // 캡처 함수
     function getFrame() {
       canvas.width = webcam.videoWidth;
       canvas.height = webcam.videoHeight;
       const ctx = canvas.getContext('2d');
       ctx.drawImage(webcam, 0, 0);
-      return canvas.toDataURL('image/jpeg', 0.5);
+      return canvas.toDataURL('image/jpeg', 0.8);
     }
 
-    // 1단계: 신분증 촬영 및 분석
+    // 1단계: 신분증 촬영
     async function captureIDCard() {
       actionBtn.disabled = true;
       
+      // 📸 찰칵 플래시 실행
       playFlash();
 
       spinner.classList.remove('hidden');
-      statusText.innerText = "신분증 사진을 추출하고 분석하는 중입니다. 잠시만 기다려주세요...";
-
-      await new Promise(r => setTimeout(r, 100));
+      statusText.innerText = "신분증에서 얼굴을 인식하는 중...";
 
       const detection = await faceapi.detectSingleFace(webcam).withFaceLandmarks().withFaceDescriptor();
       spinner.classList.add('hidden');
@@ -217,7 +213,7 @@
         idDescriptor = detection.descriptor;
         idCardImg = getFrame();
 
-        statusText.innerText = "신분증 사진 추출 성공! 이제 화면의 녹색 원에 얼굴을 맞춰주세요.";
+        statusText.innerText = "신분증 인식 성공! 이제 정면 얼굴을 맞춰주세요.";
         document.getElementById('id-guide').classList.add('hidden');
         document.getElementById('face-guide').classList.remove('hidden');
 
@@ -231,8 +227,8 @@
         actionBtn.onclick = verifyFace;
         actionBtn.disabled = false;
       } else {
-        alert("신분증에서 얼굴을 인식하지 못했습니다.\n조명이 밝은 곳에서 가이드라인에 맞춰 다시 시도해 주세요.");
-        statusText.innerText = "신분증 인식 실패. 다시 촬영해 주세요.";
+        alert("신분증에서 얼굴을 인식하지 못했습니다. 다시 위치를 맞춰주세요.");
+        statusText.innerText = "신분증 인식 실패. 다시 시도해 주세요.";
         actionBtn.disabled = false;
       }
     }
@@ -241,17 +237,15 @@
     async function verifyFace() {
       actionBtn.disabled = true;
 
+      // 📸 찰칵 플래시 실행
       playFlash();
 
       spinner.classList.remove('hidden');
-      statusText.innerText = "실물 얼굴과 신분증 사진을 대조하는 중입니다. 움직이지 마세요...";
-
-      await new Promise(r => setTimeout(r, 100));
+      statusText.innerText = "실물 얼굴 대조 및 데이터 저장 중...";
 
       const detection = await faceapi.detectSingleFace(webcam).withFaceLandmarks().withFaceDescriptor();
-      
       if (!detection) {
-        alert("정면 얼굴이 감지되지 않았습니다.\n카메라를 정면으로 바라봐 주세요.");
+        alert("정면 얼굴이 감지되지 않았습니다.");
         spinner.classList.add('hidden');
         actionBtn.disabled = false;
         return;
@@ -260,16 +254,12 @@
       faceImg = getFrame();
       const distance = faceapi.euclideanDistance(idDescriptor, detection.descriptor);
 
+      // 기준치: 0.80
+      const THRESHOLD = 0.80;
+
       if (distance < THRESHOLD) {
-        statusText.innerText = "얼굴 대조 완료! 데이터를 서버에 저장 중입니다...";
-        
-        // Google Apps Script 전송용 안정화 fetch 패턴
         fetch(GAS_API_URL, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'text/plain;charset=utf-8'
-          },
-          redirect: 'follow',
           body: JSON.stringify({
             userId: userName,
             idCardImg: idCardImg,
@@ -281,30 +271,28 @@
         .then(data => {
           spinner.classList.add('hidden');
           if (data.success) {
-            statusText.innerText = `✅ ${userName}님 본인 인증 성공! 검사 페이지로 이동합니다.`;
+            statusText.innerText = `✅ ${userName}님 인증 성공! 검사 페이지로 이동합니다.`;
             setTimeout(() => {
               window.location.href = TARGET_TEST_URL;
             }, 1500);
           } else {
-            alert("서버 처리 중 오류가 발생하였습니다. 다시 시도해 주세요.");
-            statusText.innerText = "서버 전송 실패.";
+            alert("오류가 발생하였습니다. 다시 시도해 주세요.");
             actionBtn.disabled = false;
           }
         })
         .catch(err => {
-          console.error("전송 에러 상세:", err);
           spinner.classList.add('hidden');
-          alert("네트워크 연결 오류가 발생했습니다. 구글 앱스 스크립트 배포 설정(모든 사용자 허용)을 재확인해 주세요.");
-          statusText.innerText = "통신 에러가 발생했습니다.";
+          alert("오류가 발생하였습니다. 다시 시도해 주세요.");
           actionBtn.disabled = false;
         });
 
       } else {
         spinner.classList.add('hidden');
+        // 기준치에서 얼마나 떨어져 있는지 계산
         const diff = (distance - THRESHOLD).toFixed(4);
         const currentVal = distance.toFixed(4);
         
-        alert(`신분증과 실물 얼굴이 일치하지 않습니다.\n(측정값: ${currentVal} / 기준치: ${THRESHOLD} / 초과: +${diff})\n\n정면을 바르게 보고 다시 시도해 주세요.`);
+        alert(`신분증과 실물 얼굴이 일치하지 않습니다.\n\n[측정 결과]\n- 현재 측정값: ${currentVal}\n- 일치 기준치: ${THRESHOLD} 이하\n- 기준 초과값: +${diff}`);
         statusText.innerText = `본인 인증 실패 (측정값: ${currentVal} / 기준: ${THRESHOLD})`;
         actionBtn.disabled = false;
       }
