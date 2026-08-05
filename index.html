@@ -61,8 +61,7 @@
     // ----------------------------------------------------
     // 1. 설정 항목
     // ----------------------------------------------------
-    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxuGlguTlGap2BQ9zC67v2-a5RMEeloF6URAOTgQkY9S9scE5vrHLTCAgQdq-EWwXVT/exec"; 
-    const TARGET_TEST_URL = "https://testlink.org/"; 
+    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxBkvzAtJ3INqM6OHZxSm6qVe56YqkcJLX8gW3YZcm-OMUDivi1wauUIHdf7IcPKyIz/exec"
     const MODEL_URL = 'https://raw.githubusercontent.com/vladmandic/face-api/master/model/';
     const THRESHOLD = 0.75; // 기준 수치 0.75
 
@@ -196,7 +195,7 @@
       }
     }
 
-    // 2단계: 실물 얼굴 대조 및 전송
+    // 2단계: 실물 얼굴 대조 및 전송 (어제 원본 통신 구조로 원상복구)
     async function verifyFace() {
       actionBtn.disabled = true;
       spinner.classList.remove('hidden');
@@ -214,47 +213,42 @@
       faceImg = getFrame();
       const distance = faceapi.euclideanDistance(idDescriptor, detection.descriptor);
       const distanceVal = distance.toFixed(3);
-      const isPassed = distance < THRESHOLD;
 
-      // 성공/실패와 상관없이 결과 기록 데이터 전송
-      fetch(GAS_API_URL, {
-        method: 'POST',
-        mode: 'cors',
-        headers: {
-          'Content-Type': 'text/plain;charset=utf-8'
-        },
-        body: JSON.stringify({
-          userId: userName,
-          idCardImg: idCardImg,
-          faceImg: faceImg,
-          distance: distanceVal,
-          status: isPassed ? "성공" : "실패"
+      if (distance < THRESHOLD) {
+        fetch(GAS_API_URL, {
+          method: 'POST',
+          body: JSON.stringify({
+            userId: userName,
+            idCardImg: idCardImg,
+            faceImg: faceImg,
+            distance: distanceVal
+          })
         })
-      })
-      .then(res => res.json())
-      .then(data => {
-        spinner.classList.add('hidden');
-        if (data.success) {
-          if (isPassed) {
+        .then(res => res.json())
+        .then(data => {
+          spinner.classList.add('hidden');
+          if (data.success) {
             statusText.innerText = `✅ ${userName}님 인증 성공! (거리: ${distanceVal} / 기준: ${THRESHOLD})`;
             setTimeout(() => {
               window.location.href = TARGET_TEST_URL;
             }, 1500);
           } else {
-            alert(`❌ 본인 인증 실패\n\n신분증과 실물 얼굴이 일치하지 않습니다.\n- 측정 거리값: ${distanceVal}\n- 일치 기준값: ${THRESHOLD} 미만`);
-            statusText.innerText = `❌ 인증 실패 (측정 거리: ${distanceVal} / 기준: ${THRESHOLD} 미만)`;
+            alert("서버 저장 중 오류가 발생하였습니다. 다시 시도해 주세요.");
             actionBtn.disabled = false;
           }
-        } else {
-          alert("서버 저장 중 오류가 발생하였습니다: " + data.error);
+        })
+        .catch(err => {
+          spinner.classList.add('hidden');
+          alert("서버 통신 오류가 발생하였습니다. 다시 시도해 주세요.");
           actionBtn.disabled = false;
-        }
-      })
-      .catch(err => {
+        });
+
+      } else {
         spinner.classList.add('hidden');
-        alert("서버 통신 오류가 발생하였습니다. 인터넷 연결 및 권한을 확인해 주세요.");
+        alert(`❌ 본인 인증 실패\n\n신분증과 실물 얼굴이 일치하지 않습니다.\n- 측정 거리값: ${distanceVal}\n- 일치 기준값: ${THRESHOLD} 미만\n\n※ 값이 기준(${THRESHOLD})보다 낮아야 통과됩니다.`);
+        statusText.innerText = `❌ 인증 실패 (측정 거리: ${distanceVal} / 기준: ${THRESHOLD} 미만)`;
         actionBtn.disabled = false;
-      });
+      }
     }
   </script>
 </body>
