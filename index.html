@@ -39,7 +39,7 @@
       <div id="id-guide" class="id-guide hidden"></div>
       <div id="face-guide" class="face-guide hidden"></div>
       
-      <!-- 카메라 전환 버튼 (카메라 실행 시 노출) -->
+      <!-- 카메라 전환 버튼 -->
       <button id="switch-btn" onclick="switchCamera()" class="hidden absolute top-3 right-3 bg-black/60 text-white text-xs px-3 py-1.5 rounded-full z-10 flex items-center gap-1 hover:bg-black/80">
         🔄 카메라 전환
       </button>
@@ -61,12 +61,10 @@
     // ----------------------------------------------------
     // 1. 설정 항목
     // ----------------------------------------------------
-    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxfEsvvdeOAphKjQLK6qqRmQcNWXn9yu_G4XVVXTccHRmjxianC0Q1mubghOnSn-q2p/exec"; 
-    
-    // 🔗 인증 완료 후 이동할 링크 (testlink 적용)
-    const TARGET_TEST_URL = "https://testlink.org/"; // 실제 원하시는 testlink의 상세 URL(http/https 포함)로 수정 가능합니다.
-    
+    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbw62SS245LewOOD_96Ve_4aAMEp6JUspwOc-zDCm4g6-s1xVJHeg-oDhFvnWW7Xxm47/exec"; 
+    const TARGET_TEST_URL = "https://testlink.org/"; 
     const MODEL_URL = 'https://raw.githubusercontent.com/vladmandic/face-api/master/model/';
+    const THRESHOLD = 0.65; // 기준 수치
 
     // ----------------------------------------------------
     // 2. 변수 및 요소 선언
@@ -76,7 +74,7 @@
     let idCardImg = '';
     let faceImg = '';
     let currentStream = null;
-    let currentFacingMode = "environment"; // 모바일 시 기본 후면 사용
+    let currentFacingMode = "environment"; 
 
     const webcam = document.getElementById('webcam');
     const canvas = document.getElementById('canvas');
@@ -98,7 +96,7 @@
       document.getElementById('user-display').innerText = `[ 응시자: ${userName} ]`;
     };
 
-    // 카메라 시작 (후면 우선 시도 ➔ 안되면 기본 카메라 사용)
+    // 카메라 시작
     async function startWebcam(facingMode) {
       if (currentStream) {
         currentStream.getTracks().forEach(track => track.stop());
@@ -192,8 +190,8 @@
         actionBtn.onclick = verifyFace;
         actionBtn.disabled = false;
       } else {
-        alert("신분증에서 얼굴을 인식하지 못했습니다. 다시 위치를 맞춰주세요.");
-        statusText.innerText = "신분증 인식 실패. 다시 시도해 주세요.";
+        alert("❌ 신분증에서 얼굴을 인식하지 못했습니다.\n\n[원인 예시]\n- 빛 반사가 심함\n- 신분증 얼굴 부분이 너무 어둡거나 흐림\n- 테두리 가이드라인을 벗어남");
+        statusText.innerText = "신분증 얼굴 인식 실패. 위치/조명을 확인하고 다시 시도해 주세요.";
         actionBtn.disabled = false;
       }
     }
@@ -206,48 +204,53 @@
 
       const detection = await faceapi.detectSingleFace(webcam).withFaceLandmarks().withFaceDescriptor();
       if (!detection) {
-        alert("정면 얼굴이 감지되지 않았습니다.");
+        alert("❌ 정면 얼굴이 감지되지 않았습니다.\n\n카메라 중앙에 얼굴이 오도록 맞추고 밝은 곳에서 시도해 주세요.");
         spinner.classList.add('hidden');
+        statusText.innerText = "실물 얼굴 미감지. 다시 시도해 주세요.";
         actionBtn.disabled = false;
         return;
       }
 
       faceImg = getFrame();
+      // 유클리드 거리 계산
       const distance = faceapi.euclideanDistance(idDescriptor, detection.descriptor);
+      const distanceVal = distance.toFixed(3); // 소수점 3자리까지 표시
 
-      if (distance < 0.65) {
+      // 기준(0.65) 이하일 때만 인증 성공
+      if (distance < THRESHOLD) {
         fetch(GAS_API_URL, {
           method: 'POST',
           body: JSON.stringify({
             userId: userName,
             idCardImg: idCardImg,
             faceImg: faceImg,
-            distance: distance.toFixed(4)
+            distance: distanceVal
           })
         })
         .then(res => res.json())
         .then(data => {
           spinner.classList.add('hidden');
           if (data.success) {
-            statusText.innerText = `✅ ${userName}님 인증 성공! 검사 페이지로 이동합니다.`;
+            statusText.innerText = `✅ ${userName}님 인증 성공! (거리: ${distanceVal} / 기준: ${THRESHOLD})`;
             setTimeout(() => {
               window.location.href = TARGET_TEST_URL;
             }, 1500);
           } else {
-            alert("오류가 발생하였습니다. 다시 시도해 주세요.");
+            alert("서버 저장 중 오류가 발생하였습니다. 다시 시도해 주세요.");
             actionBtn.disabled = false;
           }
         })
         .catch(err => {
           spinner.classList.add('hidden');
-          alert("오류가 발생하였습니다. 다시 시도해 주세요.");
+          alert("서버 통신 오류가 발생하였습니다. 다시 시도해 주세요.");
           actionBtn.disabled = false;
         });
 
       } else {
         spinner.classList.add('hidden');
-        alert("신분증과 실물 얼굴이 일치하지 않습니다.");
-        statusText.innerText = "본인 인증 실패.";
+        // 실패 시 측정된 distance 값과 기준값을 알림창과 상태창에 상세 안내
+        alert(`❌ 본인 인증 실패\n\n신분증과 실물 얼굴이 일치하지 않습니다.\n- 측정 거리값: ${distanceVal}\n- 일치 기준값: ${THRESHOLD} 미만\n\n※ 값이 기준(${THRESHOLD})보다 낮아야 통과됩니다. 밝은 곳에서 정면을 보고 다시 시도해 주세요.`);
+        statusText.innerText = `❌ 인증 실패 (측정 거리: ${distanceVal} / 기준: ${THRESHOLD} 미만)`;
         actionBtn.disabled = false;
       }
     }
