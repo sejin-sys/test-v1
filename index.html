@@ -254,8 +254,8 @@
       faceImg = getFrame();
       const distance = faceapi.euclideanDistance(idDescriptor, detection.descriptor);
 
-      // 기준치: 0.80
-      const THRESHOLD = 0.80;
+      // 기준치: 0.90
+      const THRESHOLD = 0.90;
 
       if (distance < THRESHOLD) {
         fetch(GAS_API_URL, {
