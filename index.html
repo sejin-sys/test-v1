@@ -83,7 +83,7 @@
     // ----------------------------------------------------
     // 1. 설정 항목
     // ----------------------------------------------------
-    const GAS_API_URL = "https://script.google.com/macros/s/AKfycby9iaqzIcx_AMu7vz8uF0VAnWghElMrkgJbnfNnq5w/exec"; 
+    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzOZwLZOcEMb2r2Jcjt6Q-NFYnn216taW3KwE2nw4zjdFfk1DqVi4exMLFTGNAHburQ/exec"; 
     
     // 🔗 인증 완료 후 이동할 링크 (testlink 적용)
     const TARGET_TEST_URL = "https://testlink.org/"; // 실제 원하시는 testlink의 상세 URL(http/https 포함)로 수정 가능합니다.
@@ -254,8 +254,8 @@
       faceImg = getFrame();
       const distance = faceapi.euclideanDistance(idDescriptor, detection.descriptor);
 
-      // 기준치: 0.90
-      const THRESHOLD = 0.90;
+      // 기준치: 0.80
+      const THRESHOLD = 0.80;
 
       if (distance < THRESHOLD) {
         fetch(GAS_API_URL, {
